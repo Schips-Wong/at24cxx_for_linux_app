@@ -1,35 +1,35 @@
-#ifndef _24Cxx_DEV_H_
-#define _24Cxx_DEV_H_
+#ifndef EEPROM_I2C_24CXX_DEV_H
+#define EEPROM_I2C_24CXX_DEV_H
 
 #include <stdint.h>
 
 /*operation state*/
-enum _24CXX_ERROR
+typedef enum
 {
-	_24CXX_OK 				= 0,
-	_24CXX_ERR_MEM			= -1,
-	_24CXX_ERR_I2C_WR 		= 1,
-	_24CXX_ERR_DEV_NONE 	= 2,
-	_24CXX_ERR_PAGE_WRITE	= 3,
-	_24CXX_ERR_PAGE_SIZE	= 4,
-	_24CXX_ERR_CHIP_SIZE	= 5,
-};
+    EEPROM_OK				= 0,
+    EEPROM_ERR_MEM			= -1,
+    EEPROM_ERR_I2C_WRITE	= 1,
+    EEPROM_ERR_DEV_NONE		= 2,
+    EEPROM_ERR_PAGE_WRITE	= 3,
+    EEPROM_ERR_PAGE_SIZE	= 4,
+    EEPROM_ERR_CHIP_SIZE	= 5,
+}eeprom_status_t;
 
 /*eeprom model*/
 typedef enum
 {
-  	_24C01_E = 1,
-	_24C02_E,
-	_24C04_E,
-	_24C08_E,
-	_24C16_E,
-	_24C32_E,
-	_24C64_E,
-	_24C128_E,
-	_24C256_E,
-	_24C512_E,
-	_24C1024_E,
-}_24_model_t;
+    EEPROM_24C01 = 1,
+    EEPROM_24C02,
+    EEPROM_24C04,
+    EEPROM_24C08,
+    EEPROM_24C16,
+    EEPROM_24C32,
+    EEPROM_24C64,
+    EEPROM_24C128,
+    EEPROM_24C256,
+    EEPROM_24C512,
+    EEPROM_24C1024,
+}eeprom_model_t;
 
 /*linux ioctl cmd*/
 #define I2C_RETRIES     		0x0701     	/*设置收不到ACK时的重试次数*/
@@ -68,18 +68,18 @@ struct i2c_rdwr_ioctl_data
 /*24cxx eeprom devcie struct*/
 typedef struct
 {
-	char  					*i2c_dev;	/*i2c bus device*/
-	uint8_t					slave_addr;	/*eeprom i2c addr*/
-	_24_model_t				model;		/*eeprom model*/
-	void(*wp)(uint8_t ctrl);			/*protect of write function*/
-	void(*page_write_delay)(void);		/*there is a delay in continuous writin for EEPROM,FRAM not need*/
+    char			*i2c_dev;					            /*i2c bus device*/
+    uint8_t			slave_addr;				            	/*eeprom i2c addr-bit-7*/
+    eeprom_model_t	model;						            /*eeprom model*/
+    void			(*callback_write_lock)(uint8_t ctrl);   /*protect of write function*/
+    void			(*callback_page_write_delay)(void);	    /*delay after page write, EEPROM needs it,FRAM not need*/
 
-}_24cxx_dev_t;
+}eeprom_dev_t;
 
 /*extern function*/
-extern int16_t _24cxx_read(_24cxx_dev_t *pdev,uint32_t addr, uint8_t *pbuf, uint32_t size);
-extern int16_t _24cxx_write(_24cxx_dev_t *pdev,uint32_t addr,uint8_t *pbuf,uint32_t size);
-extern int16_t _24cxx_erase(_24cxx_dev_t *pdev,uint32_t addr,uint8_t data, uint32_t size);
+extern int16_t eeprom_read(eeprom_dev_t *pdev, uint32_t addr, uint8_t *pbuf, uint32_t size);
+extern int16_t eeprom_write(eeprom_dev_t *pdev, uint32_t addr, uint8_t *pbuf, uint32_t size);
+extern int16_t eeprom_erase(eeprom_dev_t *pdev, uint32_t addr, uint8_t data, uint32_t size);
 
 #endif
 
