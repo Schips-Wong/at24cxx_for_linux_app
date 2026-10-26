@@ -136,8 +136,9 @@ static void usage(const char *prog)
     printf("  -d <dev>    i2c bus device, default: %s\n", default_dev.i2c_dev);
     printf("  -a <addr>   eeprom i2c address, e.g. 0x50, default: 0x%02x\n", default_dev.slave_addr);
     printf("  -m <model>  eeprom model: 24c01~24c1024, default: %s\n", model_name(default_dev.model));
+    printf("  -f <file>   write the content of the file to the eeprom, from address 0\n");
     printf("  -h          show this help\n");
-    printf("e.g. %s -d /dev/i2c-1 -a 0x50 -m 24c02\n", prog);
+    printf("e.g. %s -d /dev/i2c-1 -a 0x50 -m 24c02 -f app.bin\n", prog);
 }
 
 /**
@@ -145,13 +146,14 @@ static void usage(const char *prog)
  * @param  argc:number of the arguments
  * @param  argv:the arguments
  * @param  dev:device config,options not given keep the default value
+ * @param  file:the file to write to the eeprom,NULL if not given
  * @retval return 0 if 0k,anything else is considered an error.
  */
-static int parse_args(int argc, char *argv[], eeprom_dev_t *dev)
+static int parse_args(int argc, char *argv[], eeprom_dev_t *dev, const char **file)
 {
     int opt;
 
-    while((opt = getopt(argc, argv, "d:a:m:h")) != -1)
+    while((opt = getopt(argc, argv, "d:a:m:f:h")) != -1)
     {
         switch(opt)
         {
@@ -175,6 +177,10 @@ static int parse_args(int argc, char *argv[], eeprom_dev_t *dev)
                 }
                 break;
 
+            case 'f':
+                *file = optarg;
+                break;
+
             case 'h':
                 usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -192,6 +198,71 @@ static int parse_args(int argc, char *argv[], eeprom_dev_t *dev)
         return -1;
     }
 
+    return 0;
+}
+
+/**
+ * @brief  write the content of a file to the eeprom
+ * @param  pdev pointer to the eeprom device struct
+ * @param  path the file to write
+ * @param  addr the address of the eeprom to write to
+ * @retval return 0 if 0k,anything else is considered an error.
+ */
+static int write_file_to_eeprom(eeprom_dev_t *pdev, const char *path, uint32_t addr)
+{
+    FILE        *fp = NULL;
+    uint8_t     *buf = NULL;
+    long        file_size = 0;
+    int16_t     error = EEPROM_OK;
+
+    fp = fopen(path, "rb");
+    if(fp == NULL)
+    {
+        perror(path);
+        return -1;
+    }
+
+    if((fseek(fp, 0, SEEK_END) != 0) || ((file_size = ftell(fp)) < 0) || (fseek(fp, 0, SEEK_SET) != 0))
+    {
+        fprintf(stderr, "%s: get the file size failed\n", path);
+        fclose(fp);
+        return -1;
+    }
+
+    if(file_size == 0)
+    {
+        fprintf(stderr, "%s: the file is empty\n", path);
+        fclose(fp);
+        return -1;
+    }
+
+    buf = (uint8_t*)malloc((size_t)file_size);
+    if(buf == NULL)
+    {
+        fprintf(stderr, "no memory for %ld bytes\n", file_size);
+        fclose(fp);
+        return -1;
+    }
+
+    if(fread(buf, 1, (size_t)file_size, fp) != (size_t)file_size)
+    {
+        fprintf(stderr, "%s: read the file failed\n", path);
+        free(buf);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    error = eeprom_write(pdev, addr, buf, (uint32_t)file_size);
+    free(buf);
+
+    if(error != EEPROM_OK)
+    {
+        fprintf(stderr, "write %s failed, error code: %d\n", path, error);
+        return -1;
+    }
+
+    printf("write %ld bytes from %s to 0x%04x done\n", file_size, path, addr);
     return 0;
 }
 
@@ -277,13 +348,17 @@ static int16_t eeprom_test(eeprom_dev_t *pdev)
 int main(int argc, char *argv[])
 {
     eeprom_dev_t dev = default_dev;
+    const char   *file = NULL;
 
-    if(parse_args(argc, argv, &dev) != 0)
+    if(parse_args(argc, argv, &dev, &file) != 0)
         return EXIT_FAILURE;
 
     printf("i2c dev : %s\n", dev.i2c_dev);
     printf("addr7   : 0x%02x\n", dev.slave_addr);
     printf("model   : %s\n", model_name(dev.model));
+
+    if(file != NULL)
+        return (write_file_to_eeprom(&dev, file, 0) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 
 #ifdef USE_24CXX_TEST
     return (eeprom_test(&dev) == EEPROM_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
