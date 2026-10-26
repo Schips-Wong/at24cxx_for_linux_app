@@ -113,7 +113,7 @@ static const eeprom_dev_t eeprom_dev =
     .i2c_dev                   = "/dev/i2c-1",     /*i2c 总线设备*/
     .slave_addr                = 0x50,             /*7 位从机地址*/
     .model                     = EEPROM_24C256,    /*芯片型号*/
-    .callback_write_lock       = NULL,             /*写保护引脚控制，无则填 NULL*/
+    .callback_set_wp_pin       = NULL,             /*写保护引脚控制，无则填 NULL*/
     .callback_page_write_delay = my_page_write_delay,
 };
 
@@ -148,7 +148,7 @@ void demo(void)
 | 4 | `EEPROM_ERR_PAGE_SIZE` | 单次页写跨越页边界 |
 | 5 | `EEPROM_ERR_CHIP_SIZE` | 读写区间超出芯片容量 |
 
-`callback_write_lock(ctrl)`：写之前以 `0` 调用（解除写保护），写完后以 `1` 调用（恢复写保护），内部已保证成对调用。
+`callback_set_wp_pin(ctrl)`：写之前以 `0` 调用（解除写保护），写完后以 `1` 调用（恢复写保护），内部已保证成对调用。
 `callback_page_write_delay()`：每写完一页调用一次，给 EEPROM 留出内部写周期；FRAM 之类的器件可传 `NULL`。
 
 ## 五、注意事项

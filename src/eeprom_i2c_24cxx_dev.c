@@ -187,9 +187,9 @@ int16_t eeprom_write(eeprom_dev_t *pdev,uint32_t addr, uint8_t *pbuf, uint32_t s
         return EEPROM_ERR_DEV_NONE;
     }
 
-    if(pdev->callback_write_lock)	/*release write protect*/
+    if(pdev->callback_set_wp_pin)	/*release write protect*/
     {
-        pdev->callback_write_lock(0);
+        pdev->callback_set_wp_pin(0);
     }
 
     ee_page_size = get_eeprom_pagesize(pdev->model);
@@ -213,9 +213,9 @@ int16_t eeprom_write(eeprom_dev_t *pdev,uint32_t addr, uint8_t *pbuf, uint32_t s
             pdev->callback_page_write_delay();		/*eeprom need wait*/
         }
     }
-    if(pdev->callback_write_lock)
+    if(pdev->callback_set_wp_pin)
     {
-        pdev->callback_write_lock(1);/*write protect*/
+        pdev->callback_set_wp_pin(1);/*write protect*/
     }
 
     close(fd);

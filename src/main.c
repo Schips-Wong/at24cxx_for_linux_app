@@ -33,7 +33,7 @@ static const eeprom_dev_t default_dev =
     .i2c_dev                   = "/dev/i2c-0",     /*i2c device name*/
     .slave_addr                = 0x50,             /*eeprom address-bit-7*/
     .model                     = EEPROM_24C16,     /*eeprom model,eg AT24C02*/
-    .callback_write_lock       = NULL,             /*no write lock*/
+    .callback_set_wp_pin       = NULL,             /*no write lock*/
     .callback_page_write_delay = callback_page_write_delay, /*delay function*/
 };
 

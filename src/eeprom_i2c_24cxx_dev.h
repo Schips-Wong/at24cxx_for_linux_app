@@ -71,7 +71,7 @@ typedef struct
     char			*i2c_dev;					            /*i2c bus device*/
     uint8_t			slave_addr;				            	/*eeprom i2c addr-bit-7*/
     eeprom_model_t	model;						            /*eeprom model*/
-    void			(*callback_write_lock)(uint8_t ctrl);   /*protect of write function*/
+    void			(*callback_set_wp_pin)(uint8_t ctrl);   /*protect of write function*/
     void			(*callback_page_write_delay)(void);	    /*delay after page write, EEPROM needs it,FRAM not need*/
 
 }eeprom_dev_t;
