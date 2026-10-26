@@ -301,9 +301,8 @@ int16_t eeprom_read(eeprom_dev_t *pdev,uint32_t addr, uint8_t *pbuf, uint32_t si
  */
 int16_t eeprom_erase(eeprom_dev_t *pdev,uint32_t addr, uint8_t data, uint32_t size)
 {
-    int8_t   error = 0;
-    uint16_t i;
-    int	    fd = -1;
+    uint8_t *buf = NULL;
+    int16_t error = EEPROM_OK;
 
     if(pdev == 0)
     {
@@ -315,20 +314,23 @@ int16_t eeprom_erase(eeprom_dev_t *pdev,uint32_t addr, uint8_t data, uint32_t si
         return EEPROM_ERR_CHIP_SIZE;
     }
 
-    fd = open(pdev->i2c_dev,O_WRONLY);		/*Write only*/
-    if(fd < 0)
+    if(size == 0)
     {
-        return EEPROM_ERR_DEV_NONE;
+        return EEPROM_OK;
     }
-    for(i = 0;i < size;i++)
+
+    buf = (uint8_t*)malloc(size);
+    if(buf == NULL)
     {
-        error = eeprom_write_page(fd,pdev,addr,&data,1);
-        if(error)
-        {
-            break;
-        }
+        return EEPROM_ERR_MEM;
     }
-    close (fd);
+    memset(buf,data,size);
+
+    /*write page by page, the address increment, the page write delay and the
+      write protect are all handled in eeprom_write*/
+    error = eeprom_write(pdev,addr,buf,size);
+
+    free(buf);
 
     return error;
 }
