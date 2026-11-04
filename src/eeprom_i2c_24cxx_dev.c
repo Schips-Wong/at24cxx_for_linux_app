@@ -25,7 +25,7 @@
  * @param  model:eeprom model
  * @retval page size
  */
-static uint16_t get_eeprom_pagesize(eeprom_model_t model)
+uint16_t eeprom_page_size(eeprom_model_t model)
 {
     switch(model)
     {
@@ -108,7 +108,7 @@ static int16_t eeprom_write_page(int fd, eeprom_dev_t *pdev,uint32_t addr, uint8
         return EEPROM_ERR_DEV_NONE;
     }
 
-    ee_page_size = get_eeprom_pagesize(pdev->model);
+    ee_page_size = eeprom_page_size(pdev->model);
     if(((addr % ee_page_size) + size) > ee_page_size) 	/*the over flow of page size*/
     {
         return EEPROM_ERR_PAGE_SIZE;
@@ -192,7 +192,7 @@ int16_t eeprom_write(eeprom_dev_t *pdev,uint32_t addr, uint8_t *pbuf, uint32_t s
         pdev->callback_set_wp_pin(0);
     }
 
-    ee_page_size = get_eeprom_pagesize(pdev->model);
+    ee_page_size = eeprom_page_size(pdev->model);
     while(size > 0)
     {
         page_offset = ee_page_size - (addr % ee_page_size);

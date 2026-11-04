@@ -52,6 +52,7 @@ Usage: ./output/at24 [options]
   -a <addr>   eeprom i2c address, e.g. 0x50, default: 0x50
   -m <model>  eeprom model: 24c01~24c1024, default: 24c16
   -f <file>   write the content of the file to the eeprom, from address 0
+  -c          compare the eeprom with the file before writing, skip it if the same
   -h          show this help
 ```
 
@@ -61,6 +62,7 @@ Usage: ./output/at24 [options]
 | `-a <addr>` | EEPROM 的 7 位从机地址，十六进制或十进制均可（`0x50`、`80`），范围 0x00~0xFF | `0x50` |
 | `-m <model>` | 芯片型号，`24c01`~`24c1024`；也接受带厂商前缀或大写的写法：`at24c02`、`AT24C256` | `24c16` |
 | `-f <file>` | 把该文件内容写入 EEPROM，起始地址固定为 0 | 不指定则跑内置读写测试 |
+| `-c` | 写前检查：按芯片页大小分块回读 EEPROM 并逐字节比较，完全一致则跳过写操作 | 关闭（直接写） |
 | `-h` | 打印帮助并退出 | — |
 
 未在命令行给出的选项，一律取自 `src/main.c` 里的 `default_dev`，修改它即可改默认行为。
@@ -82,6 +84,9 @@ Usage: ./output/at24 [options]
 
 # 5. 烧写并检查返回码（脚本里用）
 ./output/at24 -m 24c512 -f config.bin && echo "burn ok" || echo "burn failed"
+
+# 6. 内容没变就不写（省寿命、省时间），适合开机脚本反复执行
+./output/at24 -d /dev/i2c-5 -a 0x50 -m 24c256 -f patch.bin -c
 ```
 
 启动后先回显实际生效的配置，再执行动作：
@@ -93,7 +98,14 @@ model   : 24c256
 write 12288 bytes from app.bin to 0x0000 done
 ```
 
-`-f` 模式只写不校验；需要校验时请用驱动接口写一个自己的回读比对流程（`eeprom_read()`）。
+`-f` 默认直接写，写完不回读；带 `-c` 时先回读 EEPROM 并与文件内容逐字节比较：
+
+- 回读按**该型号的页大小**分块进行（24C01/02 为 8 B，24C04/08/16 为 16 B，24C32 及以上为 32 B），块大小由 `eeprom_page_size()` 给出，不受 i2c 适配器单次传输长度限制；
+- 一旦发现某个块与文件不一致就停止回读，直接整段写入；
+- 全部块都一致 → 打印 `xxx is the same as the eeprom content at 0x0000, skip write`，不执行写操作，返回 0；
+- 回读若失败（例如长度超出芯片容量、I2C 读错误）→ 直接报错返回非 0，不会盲目写入。
+
+`-c` 只对 `-f` 有效，单独使用会打印警告并忽略。
 
 返回值：`0` 成功，非 `0` 失败（参数错误、文件打不开、I2C 写失败、超出芯片容量等）。
 
@@ -132,6 +144,7 @@ void demo(void)
 
 | 函数 | 说明 |
 |---|---|
+| `uint16_t eeprom_page_size(eeprom_model_t model)` | 返回该型号的页大小（字节），未知型号返回 0；可用于分块读写 |
 | `int16_t eeprom_read(eeprom_dev_t *pdev, uint32_t addr, uint8_t *pbuf, uint32_t size)` | 从 `addr` 读 `size` 字节 |
 | `int16_t eeprom_write(eeprom_dev_t *pdev, uint32_t addr, uint8_t *pbuf, uint32_t size)` | 从 `addr` 写 `size` 字节，内部按页拆分，并调用写保护/延时回调 |
 | `int16_t eeprom_erase(eeprom_dev_t *pdev, uint32_t addr, uint8_t data, uint32_t size)` | 用 `data` 填充指定区间（按页写入，内部复用 `eeprom_write()`） |

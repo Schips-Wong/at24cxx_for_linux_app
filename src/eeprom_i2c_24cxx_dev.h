@@ -77,6 +77,7 @@ typedef struct
 }eeprom_dev_t;
 
 /*extern function*/
+extern uint16_t eeprom_page_size(eeprom_model_t model);
 extern int16_t eeprom_read(eeprom_dev_t *pdev, uint32_t addr, uint8_t *pbuf, uint32_t size);
 extern int16_t eeprom_write(eeprom_dev_t *pdev, uint32_t addr, uint8_t *pbuf, uint32_t size);
 extern int16_t eeprom_erase(eeprom_dev_t *pdev, uint32_t addr, uint8_t data, uint32_t size);
