@@ -53,6 +53,7 @@ Usage: ./output/at24 [options]
   -m <model>  eeprom model: 24c01~24c1024, default: 24c16
   -f <file>   write the content of the file to the eeprom, from address 0
   -c          compare the eeprom with the file before writing, skip it if the same
+  -v          read the eeprom back and compare with the file after writing
   -h          show this help
 ```
 
@@ -63,6 +64,7 @@ Usage: ./output/at24 [options]
 | `-m <model>` | 芯片型号，`24c01`~`24c1024`；也接受带厂商前缀或大写的写法：`at24c02`、`AT24C256` | `24c16` |
 | `-f <file>` | 把该文件内容写入 EEPROM，起始地址固定为 0 | 不指定则跑内置读写测试 |
 | `-c` | 写前检查：按芯片页大小分块回读 EEPROM 并逐字节比较，完全一致则跳过写操作 | 关闭（直接写） |
+| `-v` | 写后校验：写完后按同样方式回读并与文件比较，不一致则报错返回非 0 | 关闭（不回读） |
 | `-h` | 打印帮助并退出 | — |
 
 未在命令行给出的选项，一律取自 `src/main.c` 里的 `default_dev`，修改它即可改默认行为。
@@ -87,6 +89,12 @@ Usage: ./output/at24 [options]
 
 # 6. 内容没变就不写（省寿命、省时间），适合开机脚本反复执行
 ./output/at24 -d /dev/i2c-5 -a 0x50 -m 24c256 -f patch.bin -c
+
+# 7. 写完立刻回读校验，失败返回非 0
+./output/at24 -d /dev/i2c-5 -a 0x50 -m 24c256 -f patch.bin -v
+
+# 8. 写前检查 + 写后校验（产线推荐）
+./output/at24 -m 24c256 -f patch.bin -c -v && echo "verify ok" || echo "verify failed"
 ```
 
 启动后先回显实际生效的配置，再执行动作：
@@ -98,14 +106,22 @@ model   : 24c256
 write 12288 bytes from app.bin to 0x0000 done
 ```
 
-`-f` 默认直接写，写完不回读；带 `-c` 时先回读 EEPROM 并与文件内容逐字节比较：
+`-f` 默认直接写，写完不回读。`-c` 与 `-v` 都可与 `-f` 组合，回读一律按**该型号的页大小**分块比对（24C01/02 为 8 B，24C04/08/16 为 16 B，24C32 及以上为 32 B，块大小取自 `eeprom_page_size()`），因此不受 i2c 适配器单次传输长度限制。
 
-- 回读按**该型号的页大小**分块进行（24C01/02 为 8 B，24C04/08/16 为 16 B，24C32 及以上为 32 B），块大小由 `eeprom_page_size()` 给出，不受 i2c 适配器单次传输长度限制；
+`-c`（写前检查）：
+
 - 一旦发现某个块与文件不一致就停止回读，直接整段写入；
 - 全部块都一致 → 打印 `xxx is the same as the eeprom content at 0x0000, skip write`，不执行写操作，返回 0；
 - 回读若失败（例如长度超出芯片容量、I2C 读错误）→ 直接报错返回非 0，不会盲目写入。
 
-`-c` 只对 `-f` 有效，单独使用会打印警告并忽略。
+`-v`（写后校验）：
+
+- 写入成功后重新从同一地址回读文件长度，与内存中的文件内容逐块比较；
+- 全部一致 → 打印 `xxx: verify ok, N bytes match`，返回 0；
+- 有任何差异 → 打印 `xxx: verify failed, the content read back is different from the file`，返回非 0（脚本可据此判定烧写失败）；
+- 回读出错同样返回非 0。
+
+`-c` 和 `-v` 只对 `-f` 有效，单独使用会打印警告并忽略；两者同时打开时，若 `-c` 判定内容一致而跳过写入，则不会再执行写后校验。
 
 返回值：`0` 成功，非 `0` 失败（参数错误、文件打不开、I2C 写失败、超出芯片容量等）。
 

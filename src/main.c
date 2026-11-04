@@ -138,8 +138,9 @@ static void usage(const char *prog)
     printf("  -m <model>  eeprom model: 24c01~24c1024, default: %s\n", model_name(default_dev.model));
     printf("  -f <file>   write the content of the file to the eeprom, from address 0\n");
     printf("  -c          compare the eeprom with the file before writing, skip it if the same\n");
+    printf("  -v          read the eeprom back and compare with the file after writing\n");
     printf("  -h          show this help\n");
-    printf("e.g. %s -d /dev/i2c-1 -a 0x50 -m 24c02 -f app.bin -c\n", prog);
+    printf("e.g. %s -d /dev/i2c-1 -a 0x50 -m 24c02 -f app.bin -c -v\n", prog);
 }
 
 /**
@@ -149,13 +150,14 @@ static void usage(const char *prog)
  * @param  dev:device config,options not given keep the default value
  * @param  file:the file to write to the eeprom,NULL if not given
  * @param  check:1 if the eeprom should be compared with the file before writing
+ * @param  verify:1 if the eeprom should be compared with the file after writing
  * @retval return 0 if 0k,anything else is considered an error.
  */
-static int parse_args(int argc, char *argv[], eeprom_dev_t *dev, const char **file, int *check)
+static int parse_args(int argc, char *argv[], eeprom_dev_t *dev, const char **file, int *check, int *verify)
 {
     int opt;
 
-    while((opt = getopt(argc, argv, "d:a:m:f:ch")) != -1)
+    while((opt = getopt(argc, argv, "d:a:m:f:cvh")) != -1)
     {
         switch(opt)
         {
@@ -187,6 +189,10 @@ static int parse_args(int argc, char *argv[], eeprom_dev_t *dev, const char **fi
                 *check = 1;
                 break;
 
+            case 'v':
+                *verify = 1;
+                break;
+
             case 'h':
                 usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -208,20 +214,78 @@ static int parse_args(int argc, char *argv[], eeprom_dev_t *dev, const char **fi
 }
 
 /**
+ * @brief  compare the eeprom content with a buffer,block by block
+ * @param  pdev pointer to the eeprom device struct
+ * @param  addr the address of the eeprom to compare from
+ * @param  buf the data to compare with,size bytes
+ * @param  size number of bytes to compare
+ * @retval 1:the same,0:different,-1:error
+ */
+static int eeprom_compare(eeprom_dev_t *pdev, uint32_t addr, const uint8_t *buf, uint32_t size)
+{
+    uint16_t    chunk_size = eeprom_page_size(pdev->model);   /*one page of the model*/
+    uint32_t    offset = 0;
+    uint8_t     *read_buf = NULL;
+    int16_t     error = EEPROM_OK;
+
+    if(chunk_size == 0)
+    {
+        fprintf(stderr, "unknown eeprom model, cannot compare with the eeprom\n");
+        return -1;
+    }
+
+    read_buf = (uint8_t*)malloc(chunk_size);
+    if(read_buf == NULL)
+    {
+        fprintf(stderr, "no memory for %u bytes\n", chunk_size);
+        return -1;
+    }
+
+    /*read the eeprom block by block,and stop on the first different block*/
+    while(offset < size)
+    {
+        uint32_t len = size - offset;
+
+        if(len > chunk_size)
+            len = chunk_size;
+
+        error = eeprom_read(pdev, addr + offset, read_buf, len);
+        if(error != EEPROM_OK)
+        {
+            fprintf(stderr, "read back the eeprom failed, error code: %d\n", error);
+            free(read_buf);
+            return -1;
+        }
+
+        if(memcmp(read_buf, buf + offset, len) != 0)
+        {
+            free(read_buf);
+            return 0;
+        }
+
+        offset += len;
+    }
+
+    free(read_buf);
+    return 1;
+}
+
+/**
  * @brief  write the content of a file to the eeprom
  * @param  pdev pointer to the eeprom device struct
  * @param  path the file to write
  * @param  addr the address of the eeprom to write to
  * @param  check 1:compare the eeprom with the file first,skip the write if they are the same
+ * @param  verify 1:read the eeprom back and compare with the file after writing
  * @retval return 0 if 0k,anything else is considered an error.
  */
-static int write_file_to_eeprom(eeprom_dev_t *pdev, const char *path, uint32_t addr, int check)
+static int write_file_to_eeprom(eeprom_dev_t *pdev, const char *path, uint32_t addr, int check, int verify)
 {
     FILE        *fp = NULL;
     uint8_t     *file_buf = NULL;
-    uint8_t     *eeprom_buf = NULL;
     long        file_size = 0;
     int16_t     error = EEPROM_OK;
+    int         same = 0;
 
     fp = fopen(path, "rb");
     if(fp == NULL)
@@ -263,50 +327,13 @@ static int write_file_to_eeprom(eeprom_dev_t *pdev, const char *path, uint32_t a
 
     if(check)
     {
-        uint16_t chunk_size = eeprom_page_size(pdev->model);   /*one page of the model*/
-        uint32_t offset = 0;
-
-        if(chunk_size == 0)
+        same = eeprom_compare(pdev, addr, file_buf, (uint32_t)file_size);
+        if(same < 0)
         {
-            fprintf(stderr, "unknown eeprom model, cannot compare with the eeprom\n");
             free(file_buf);
             return -1;
         }
-
-        eeprom_buf = (uint8_t*)malloc(chunk_size);
-        if(eeprom_buf == NULL)
-        {
-            fprintf(stderr, "no memory for %u bytes\n", chunk_size);
-            free(file_buf);
-            return -1;
-        }
-
-        /*read the eeprom block by block,and stop on the first different block*/
-        while(offset < (uint32_t)file_size)
-        {
-            uint32_t len = (uint32_t)file_size - offset;
-
-            if(len > chunk_size)
-                len = chunk_size;
-
-            error = eeprom_read(pdev, addr + offset, eeprom_buf, len);
-            if(error != EEPROM_OK)
-            {
-                fprintf(stderr, "read back the eeprom failed, error code: %d\n", error);
-                free(eeprom_buf);
-                free(file_buf);
-                return -1;
-            }
-
-            if(memcmp(eeprom_buf, file_buf + offset, len) != 0)
-                break;              /*different, write the file*/
-
-            offset += len;
-        }
-
-        free(eeprom_buf);
-
-        if(offset >= (uint32_t)file_size)
+        if(same == 1)
         {
             printf("%s is the same as the eeprom content at 0x%04x, skip write\n", path, addr);
             free(file_buf);
@@ -315,15 +342,33 @@ static int write_file_to_eeprom(eeprom_dev_t *pdev, const char *path, uint32_t a
     }
 
     error = eeprom_write(pdev, addr, file_buf, (uint32_t)file_size);
-    free(file_buf);
-
     if(error != EEPROM_OK)
     {
         fprintf(stderr, "write %s failed, error code: %d\n", path, error);
+        free(file_buf);
         return -1;
     }
 
     printf("write %ld bytes from %s to 0x%04x done\n", file_size, path, addr);
+
+    if(verify)
+    {
+        same = eeprom_compare(pdev, addr, file_buf, (uint32_t)file_size);
+        if(same < 0)
+        {
+            free(file_buf);
+            return -1;
+        }
+        if(same == 0)
+        {
+            fprintf(stderr, "%s: verify failed, the content read back is different from the file\n", path);
+            free(file_buf);
+            return -1;
+        }
+        printf("%s: verify ok, %ld bytes match\n", path, file_size);
+    }
+
+    free(file_buf);
     return 0;
 }
 
@@ -411,19 +456,20 @@ int main(int argc, char *argv[])
     eeprom_dev_t dev = default_dev;
     const char   *file = NULL;
     int          check = 0;
+    int          verify = 0;
 
-    if(parse_args(argc, argv, &dev, &file, &check) != 0)
+    if(parse_args(argc, argv, &dev, &file, &check, &verify) != 0)
         return EXIT_FAILURE;
 
     printf("i2c dev : %s\n", dev.i2c_dev);
     printf("addr7   : 0x%02x\n", dev.slave_addr);
     printf("model   : %s\n", model_name(dev.model));
 
-    if((check != 0) && (file == NULL))
-        fprintf(stderr, "warning: -c only works with -f, ignored\n");
+    if(((check != 0) || (verify != 0)) && (file == NULL))
+        fprintf(stderr, "warning: -c and -v only work with -f, ignored\n");
 
     if(file != NULL)
-        return (write_file_to_eeprom(&dev, file, 0, check) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+        return (write_file_to_eeprom(&dev, file, 0, check, verify) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 
 #ifdef USE_24CXX_TEST
     return (eeprom_test(&dev) == EEPROM_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
